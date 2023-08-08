@@ -384,8 +384,8 @@ static int write_adpcm_wav_header (FILE *outfile, int num_channels, u32 num_samp
 
 static int adpcm_encode_data (FILE *infile, FILE *outfile, int num_channels, u32 num_samples, int samples_per_block, int lookahead, int noise_shaping)
 {
-    int block_size = (samples_per_block - 1) / (num_channels ^ 3) + (num_channels * 4), percent;
-    s16 *pcm_block = malloc (samples_per_block * num_channels * 2);
+    int block_size = num_samples / 2 + 4, percent; //(samples_per_block - 1) / (num_channels ^ 3) + (num_channels * 4), percent;
+    s16 *pcm_block = malloc (num_samples * num_channels * 2);
     void *adpcm_block = malloc (block_size);
     u32 progress_divider = 0;
     void *adpcm_cnxt = NULL;
@@ -395,92 +395,99 @@ static int adpcm_encode_data (FILE *infile, FILE *outfile, int num_channels, u32
         return -1;
     }
 
-    while (num_samples) {
-        int this_block_adpcm_samples = samples_per_block;
-        int this_block_pcm_samples = samples_per_block;
-        size_t num_bytes;
+    //while (num_samples) {
+    //    int this_block_adpcm_samples = samples_per_block;
+    //    int this_block_pcm_samples = samples_per_block;
+    //    size_t num_bytes;
+    //
+    //    if (this_block_pcm_samples > num_samples) {
+    //        this_block_adpcm_samples = ((num_samples + 6) & ~7) + 1;
+    //        block_size = (this_block_adpcm_samples - 1) / (num_channels ^ 3) + (num_channels * 4);
+    //        this_block_pcm_samples = num_samples;
+    //    }
+    //
+    //    if (!fread (pcm_block, this_block_pcm_samples * num_channels * 2, 1, infile)) {
+    //        fprintf (stderr, "\rcould not read all audio data from input file!\n");
+    //        return -1;
+    //    }
+    //
+    //    if (IS_BIG_ENDIAN) {
+    //        int scount = this_block_pcm_samples * num_channels;
+    //        u8 *cp = (u8 *) pcm_block;
+    //
+    //        while (scount--) {
+    //            s16 temp = cp [0] + (cp [1] << 8);
+    //            * (s16 *) cp = temp;
+    //            cp += 2;
+    //        }
+    //    }
+    //
+    //    // if this is the last block and it's not full, duplicate the last sample(s) so we don't
+    //    // create problems for the lookahead
+    //
+    //    if (this_block_adpcm_samples > this_block_pcm_samples) {
+    //        s16 *dst = pcm_block + this_block_pcm_samples * num_channels, *src = dst - num_channels;
+    //        int dups = (this_block_adpcm_samples - this_block_pcm_samples) * num_channels;
+    //
+    //        while (dups--)
+    //            *dst++ = *src++;
+    //    }
+    //
+    //    // if this is the first block, compute a decaying average (in reverse) so that we can let the
+    //    // encoder know what kind of initial deltas to expect (helps initializing index)
+    //
+    //    if (!adpcm_cnxt) {
+    s32 average_deltas [2];
+    int i;
 
-        if (this_block_pcm_samples > num_samples) {
-            this_block_adpcm_samples = ((num_samples + 6) & ~7) + 1;
-            block_size = (this_block_adpcm_samples - 1) / (num_channels ^ 3) + (num_channels * 4);
-            this_block_pcm_samples = num_samples;
-        }
+    average_deltas [0] = average_deltas [1] = 0;
 
-        if (!fread (pcm_block, this_block_pcm_samples * num_channels * 2, 1, infile)) {
-            fprintf (stderr, "\rcould not read all audio data from input file!\n");
-            return -1;
-        }
+    for (i = num_samples * num_channels; i -= num_channels;) {
+        average_deltas [0] -= average_deltas [0] >> 3;
+        average_deltas [0] += abs ((s32) pcm_block [i] - pcm_block [i - num_channels]);
 
-        if (IS_BIG_ENDIAN) {
-            int scount = this_block_pcm_samples * num_channels;
-            u8 *cp = (u8 *) pcm_block;
-
-            while (scount--) {
-                s16 temp = cp [0] + (cp [1] << 8);
-                * (s16 *) cp = temp;
-                cp += 2;
-            }
-        }
-
-        // if this is the last block and it's not full, duplicate the last sample(s) so we don't
-        // create problems for the lookahead
-
-        if (this_block_adpcm_samples > this_block_pcm_samples) {
-            s16 *dst = pcm_block + this_block_pcm_samples * num_channels, *src = dst - num_channels;
-            int dups = (this_block_adpcm_samples - this_block_pcm_samples) * num_channels;
-
-            while (dups--)
-                *dst++ = *src++;
-        }
-
-        // if this is the first block, compute a decaying average (in reverse) so that we can let the
-        // encoder know what kind of initial deltas to expect (helps initializing index)
-
-        if (!adpcm_cnxt) {
-            s32 average_deltas [2];
-            int i;
-
-            average_deltas [0] = average_deltas [1] = 0;
-
-            for (i = this_block_adpcm_samples * num_channels; i -= num_channels;) {
-                average_deltas [0] -= average_deltas [0] >> 3;
-                average_deltas [0] += abs ((s32) pcm_block [i] - pcm_block [i - num_channels]);
-
-                if (num_channels == 2) {
-                    average_deltas [1] -= average_deltas [1] >> 3;
-                    average_deltas [1] += abs ((s32) pcm_block [i-1] - pcm_block [i+1]);
-                }
-            }
-
-            average_deltas [0] >>= 3;
-            average_deltas [1] >>= 3;
-
-            adpcm_cnxt = adpcm_create_context (num_channels, lookahead, noise_shaping, average_deltas);
-        }
-
-        adpcm_encode_block (adpcm_cnxt, adpcm_block, &num_bytes, pcm_block, this_block_adpcm_samples);
-
-        if (num_bytes != block_size) {
-            fprintf (stderr, "\radpcm_encode_block() did not return expected value (expected %d, got %d)!\n", block_size, (int) num_bytes);
-            return -1;
-        }
-
-        if (!fwrite (adpcm_block, block_size, 1, outfile)) {
-            fprintf (stderr, "\rcould not write all audio data to output file!\n");
-            return -1;
-        }
-
-        num_samples -= this_block_pcm_samples;
-
-        if (progress_divider) {
-            int new_percent = 100 - num_samples / progress_divider;
-
-            if (new_percent != percent) {
-                fprintf (stderr, "\rprogress: %d%% ", percent = new_percent);
-                fflush (stderr);
-            }
+        if (num_channels == 2) {
+            average_deltas [1] -= average_deltas [1] >> 3;
+            average_deltas [1] += abs ((s32) pcm_block [i-1] - pcm_block [i+1]);
         }
     }
+
+    average_deltas [0] >>= 3;
+    average_deltas [1] >>= 3;
+
+    adpcm_cnxt = adpcm_create_context (num_channels, lookahead, noise_shaping, average_deltas);
+        //}
+
+    //adpcm_encode_block (adpcm_cnxt, adpcm_block, &num_bytes, pcm_block, this_block_adpcm_samples);
+    if (!fread (pcm_block, num_samples * num_channels * 2, 1, infile)) {
+        fprintf (stderr, "\rcould not read all audio data from input file!\n");
+        return -1;
+    }
+
+    size_t num_bytes;
+    adpcm_encode_block (adpcm_cnxt, adpcm_block, &num_bytes, pcm_block, num_samples);
+
+        //if (num_bytes != block_size) {
+        //    fprintf (stderr, "\radpcm_encode_block() did not return expected value (expected %d, got %d)!\n", block_size, (int) num_bytes);
+        //    return -1;
+        //}
+
+    if (!fwrite (adpcm_block, block_size, 1, outfile)) {
+        fprintf (stderr, "\rcould not write all audio data to output file!\n");
+        return -1;
+    }
+
+    //    num_samples -= this_block_pcm_samples;
+    //
+    //    if (progress_divider) {
+    //        int new_percent = 100 - num_samples / progress_divider;
+    //
+    //        if (new_percent != percent) {
+    //            fprintf (stderr, "\rprogress: %d%% ", percent = new_percent);
+    //            fflush (stderr);
+    //        }
+    //    }
+    //}
 
     if (adpcm_cnxt)
         adpcm_free_context (adpcm_cnxt);
