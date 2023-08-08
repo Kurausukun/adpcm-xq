@@ -41,7 +41,6 @@ static const char *usage =
 #define ADPCM_FLAG_NOISE_SHAPING    0x1
 #define ADPCM_FLAG_RAW_OUTPUT       0x2
 
-static int adpcm_converter (char *infilename, char *outfilename, int flags, int blocksize_pow2, int lookahead);
 static int verbosity = 0, decode_only = 0, encode_only = 0;
 
 int main (argc, argv) int argc; char **argv;
@@ -203,7 +202,7 @@ static int adpcm_encode_data (FILE *infile, FILE *outfile, int num_channels, uin
 static void little_endian_to_native (void *data, char *format);
 static void native_to_little_endian (void *data, char *format);
 
-static int adpcm_converter (char *infilename, char *outfilename, int flags, int blocksize_pow2, int lookahead)
+int adpcm_converter (char *infilename, char *outfilename, int flags, int blocksize_pow2, int lookahead)
 {
     int format = 0, res = 0, bits_per_sample, num_channels;
     uint32_t fact_samples = 0, num_samples = 0, sample_rate;
@@ -445,17 +444,6 @@ static int adpcm_converter (char *infilename, char *outfilename, int flags, int 
 
         res = adpcm_encode_data (infile, outfile, num_channels, num_samples, samples_per_block, lookahead,
             (flags & ADPCM_FLAG_NOISE_SHAPING) ? (sample_rate > 64000 ? NOISE_SHAPING_STATIC : NOISE_SHAPING_DYNAMIC) : NOISE_SHAPING_OFF);
-    }
-    else if (format == WAVE_FORMAT_IMA_ADPCM) {
-        if (!(flags & ADPCM_FLAG_RAW_OUTPUT) && !write_pcm_wav_header (outfile, num_channels, num_samples, sample_rate)) {
-            fprintf (stderr, "can't write header to file \"%s\" !\n", outfilename);
-            return -1;
-        }
-
-        if (verbosity >= 0) fprintf (stderr, "decoding ADPCM file \"%s\" to%sPCM file \"%s\"...\n",
-            infilename, (flags & ADPCM_FLAG_RAW_OUTPUT) ? " raw " : " ", outfilename);
-
-        res = adpcm_decode_data (infile, outfile, num_channels, num_samples, WaveHeader.BlockAlign);
     }
 
     fclose (outfile);

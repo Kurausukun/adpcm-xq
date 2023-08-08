@@ -22,6 +22,8 @@ typedef __int8  int8_t;
 #include <stdint.h>
 #endif
 
+#include <stddef.h>
+
 void *adpcm_create_context (int num_channels, int lookahead, int noise_shaping, int32_t initial_deltas [2]);
 int adpcm_encode_block (void *p, uint8_t *outbuf, size_t *outbufsize, const int16_t *inbuf, int inbufcount);
 int adpcm_decode_block (int16_t *outbuf, const uint8_t *inbuf, size_t inbufsize, int channels);

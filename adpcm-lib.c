@@ -6,6 +6,7 @@
 //      Distributed under the BSD Software License (see license.txt)      //
 ////////////////////////////////////////////////////////////////////////////
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,7 +146,10 @@ static double minimum_error (const struct adpcm_channel *pchan, int nch, int32_t
     else
         chan.pcmdata += trial_delta;
 
-    CLIP(chan.pcmdata, -32768, 32767);
+    if (chan.pcmdata < -32768)
+        chan.pcmdata = -32767;
+    else if (chan.pcmdata > 32767)
+        chan.pcmdata = 32767;
     if (best_nibble) *best_nibble = nibble;
     min_error = (double) (chan.pcmdata - csample) * (chan.pcmdata - csample);
 
@@ -175,7 +179,10 @@ static double minimum_error (const struct adpcm_channel *pchan, int nch, int32_t
         else
             chan.pcmdata += trial_delta;
 
-        CLIP(chan.pcmdata, -32768, 32767);
+        if (chan.pcmdata < -32768)
+            chan.pcmdata = -32767;
+        else if (chan.pcmdata > 32767)
+            chan.pcmdata = 32767;
 
         error = (double) (chan.pcmdata - csample) * (chan.pcmdata - csample);
 
@@ -243,7 +250,10 @@ static uint8_t encode_sample (struct adpcm_context *pcnxt, int ch, const int16_t
 
     pchan->index += index_table[nibble & 0x07];
     CLIP(pchan->index, 0, 88);
-    CLIP(pchan->pcmdata, -32768, 32767);
+    if (pchan->pcmdata < -32768)
+        pchan->pcmdata = -32767;
+    else if (pchan->pcmdata > 32767)
+        pchan->pcmdata = 32767;
 
     if (pcnxt->noise_shaping)
         pchan->error += pchan->pcmdata;
